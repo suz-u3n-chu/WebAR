@@ -5,8 +5,8 @@ import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { LumaSplatsThree } from '@lumaai/luma-web';
 
 // --- CONFIGURATION ---
-// Replace this URL with your own .spz file from Luma AI
-const SPLAT_URL = 'https://assets.lumalabs.ai/m/d557c12c-965f-4f74-a187-436d3771c1b5/659174391852_Fisheye_Initial_cp.spz';
+// Default model
+const DEFAULT_URL = 'https://assets.lumalabs.ai/m/d557c12c-965f-4f74-a187-436d3771c1b5/659174391852_Fisheye_Initial_cp.spz';
 
 // --- GLOBALS ---
 let camera, scene, renderer;
@@ -16,6 +16,7 @@ let hitTestSource = null;
 let hitTestSourceRequested = false;
 let splat;
 let controls;
+let currentSplatURL = DEFAULT_URL;
 
 init();
 animate();
@@ -49,20 +50,35 @@ function init() {
     controls.update();
 
     // 6. Load Luma Gaussian Splat
-    loadSplatModel();
+    loadSplatModel(DEFAULT_URL);
 
     // 7. AR Setup
     setupWebXR();
 
     // 8. Event Listeners
     window.addEventListener('resize', onWindowResize);
+    setupUI();
 }
 
-function loadSplatModel() {
+function loadSplatModel(url) {
+    // Clean up existing splat
+    if (splat) {
+        scene.remove(splat);
+        if (splat.dispose) splat.dispose();
+        splat = null;
+    }
+
+    const loadingEl = document.getElementById('loading');
+    if (loadingEl) {
+        loadingEl.innerText = 'Loading Model...';
+        loadingEl.style.opacity = '1';
+    }
+
     // Initialize Luma Splat loader
     splat = new LumaSplatsThree({
-        source: SPLAT_URL,
-        enableThreeShaderIntegration: false
+        source: url,
+        enableThreeShaderIntegration: false,
+        // Disable initial animation/positioning if desired, but defaults are usually fine
     });
     
     // Scale and position adjustment for initial view
@@ -71,11 +87,54 @@ function loadSplatModel() {
     
     // Listen for load event to hide loading screen
     splat.onLoad = () => {
-        const loadingEl = document.getElementById('loading');
         if (loadingEl) loadingEl.style.opacity = '0';
+        console.log('Model loaded successfully');
+    };
+
+    splat.onError = (err) => {
+        console.error('Failed to load splat:', err);
+        if (loadingEl) loadingEl.innerText = 'Error loading model';
     };
 
     scene.add(splat);
+    currentSplatURL = url;
+}
+
+function setupUI() {
+    const menuBtn = document.getElementById('menu-btn');
+    const overlay = document.getElementById('menu-overlay');
+    const closeBtn = document.getElementById('close-menu');
+    const loadUrlBtn = document.getElementById('load-url-btn');
+    const urlInput = document.getElementById('url-input');
+    const fileInput = document.getElementById('file-input');
+
+    // Toggle Menu
+    menuBtn.addEventListener('click', () => {
+        overlay.style.display = 'flex';
+    });
+    closeBtn.addEventListener('click', () => {
+        overlay.style.display = 'none';
+    });
+
+    // Load from URL
+    loadUrlBtn.addEventListener('click', () => {
+        const url = urlInput.value.trim();
+        if (url) {
+            loadSplatModel(url);
+            overlay.style.display = 'none';
+        }
+    });
+
+    // Load from File
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const objectUrl = URL.createObjectURL(file);
+            loadSplatModel(objectUrl);
+            overlay.style.display = 'none';
+            // Note: objectURL should ideally be revoked later, but for this simple app we keep it
+        }
+    });
 }
 
 function setupWebXR() {
@@ -137,8 +196,9 @@ function onSelect() {
 
         splat.position.copy(position);
         
-        // Ensure it's upright (optional: match reticle rotation if you want it to stick to walls)
-        // splat.quaternion.copy(quaternion); 
+        // Optional: Make it look at the camera (Y-axis rotation only)
+        // const lookPos = new THREE.Vector3(camera.position.x, splat.position.y, camera.position.z);
+        // splat.lookAt(lookPos);
     }
 }
 
